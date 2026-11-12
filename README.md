@@ -45,15 +45,20 @@ MyProject/
 
 ## 🚀 Getting Started
 
-### Repository Clone
+### Requirements
 
-```
-git clone [https://github.com/Dev-Hwani/MyProject.git](https://github.com/Dev-Hwani/MyProject.git) 
-cd MyProject
+* Docker Desktop or Docker Engine with Docker Compose
+
+### Run the application
+
+From the project root, build and start PostgreSQL, the backend, and the frontend:
+
+```bash
+docker compose up --build
 ```
 
-### Docker Compose 전체 서비스 실행
+Open the frontend at [http://localhost:5173](http://localhost:5173). The backend is available at [http://localhost:8080](http://localhost:8080).
 
-```
-docker compose up -d --build
-```
+To run the services in the background, use `docker compose up -d --build`. Follow logs with `docker compose logs -f` and stop the services with `docker compose down`.
+
+PostgreSQL data is kept in a Docker volume when the services are stopped. To remove the database data as well, run `docker compose down -v`.

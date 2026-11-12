@@ -4,7 +4,7 @@ WORKDIR /app
 
 # 2. 의존성 설치 및 코드 복사
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 COPY . .
 
 # 3. Vite 개발 서버를 외부에서 접근 가능하게 5173 포트로 실행

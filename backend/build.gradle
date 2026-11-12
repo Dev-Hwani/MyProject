@@ -26,6 +26,10 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
 }
 
+tasks.named('bootJar') {
+	archiveFileName = 'app.jar'
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
 }

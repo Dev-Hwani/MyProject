@@ -2,63 +2,83 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+const MAX_NAME_LENGTH = 100
+
+function getErrorMessage(error) {
+  return error.response?.data?.detail || error.response?.data?.message || '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+}
+
 function App() {
   const [users, setUsers] = useState([])
   const [inputName, setInputName] = useState('')
-
-  // 💡 수정 기능을 위한 상태값 추가
-  const [editingId, setEditingId] = useState(null)     // 현재 수정 중인 항목의 ID (null이면 수정 모드 아님)
-  const [editingName, setEditingName] = useState('')   // 수정 중인 새로운 이름 입력값
-
-  // 1. 사용자 목록 가져오기 (Read)
-  const fetchUsers = () => {
-    axios.get('http://localhost:8080/users')
-      .then(res => setUsers(res.data))
-      .catch(err => console.error('백엔드 연결 에러:', err))
-  }
+  const [editingId, setEditingId] = useState(null)
+  const [editingName, setEditingName] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [busyUserId, setBusyUserId] = useState(null)
 
   useEffect(() => {
-    fetchUsers()
+    axios.get(`${API_BASE_URL}/users`)
+      .then(res => setUsers(res.data))
+      .catch(error => setErrorMessage(getErrorMessage(error)))
+      .finally(() => setIsLoading(false))
   }, [])
 
-  // 2. 사용자 추가하기 (Create)
-  const handleAddUser = () => {
-    if (!inputName.trim()) return
-    axios.post(`http://localhost:8080/users?name=${encodeURIComponent(inputName)}`)
-      .then(() => {
-        setInputName('')
-        fetchUsers()
-      })
-      .catch(err => console.error('저장 실패:', err))
+  const handleAddUser = async () => {
+    const name = inputName.trim()
+    if (!name || name.length > MAX_NAME_LENGTH || isSaving) return
+
+    setErrorMessage('')
+    setIsSaving(true)
+    try {
+      const { data } = await axios.post(`${API_BASE_URL}/users`, null, { params: { name } })
+      setUsers(currentUsers => [...currentUsers, data])
+      setInputName('')
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  // 3. 사용자 삭제하기 (Delete)
-  const handleDeleteUser = (id) => {
-    if (!window.confirm("정말 삭제하시겠습니까?")) return
+  const handleDeleteUser = async (id) => {
+    if (!window.confirm('정말 삭제하시겠습니까?') || busyUserId !== null) return
 
-    axios.delete(`http://localhost:8080/users/${id}`)
-      .then(() => {
-        fetchUsers() // 삭제 후 목록 새로고침
-      })
-      .catch(err => console.error('삭제 실패:', err))
+    setErrorMessage('')
+    setBusyUserId(id)
+    try {
+      await axios.delete(`${API_BASE_URL}/users/${id}`)
+      setUsers(currentUsers => currentUsers.filter(user => user.id !== id))
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error))
+    } finally {
+      setBusyUserId(null)
+    }
   }
 
-  // 4-1. 수정 모드 시작 버튼 눌렀을 때
   const handleStartEdit = (user) => {
     setEditingId(user.id)
     setEditingName(user.name)
   }
 
-  // 4-2. 수정 내용 백엔드로 저장하기 (Update)
-  const handleUpdateUser = (id) => {
-    if (!editingName.trim()) return
+  const handleUpdateUser = async (id) => {
+    const name = editingName.trim()
+    if (!name || name.length > MAX_NAME_LENGTH || busyUserId !== null) return
 
-    axios.put(`http://localhost:8080/users/${id}?name=${encodeURIComponent(editingName)}`)
-      .then(() => {
-        setEditingId(null) // 수정 모드 종료
-        fetchUsers()       // 수정 후 목록 새로고침
-      })
-      .catch(err => console.error('수정 실패:', err))
+    setErrorMessage('')
+    setBusyUserId(id)
+    try {
+      const { data } = await axios.put(`${API_BASE_URL}/users/${id}`, null, { params: { name } })
+      setUsers(currentUsers => currentUsers.map(user => user.id === id ? data : user))
+      setEditingId(null)
+      setEditingName('')
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error))
+    } finally {
+      setBusyUserId(null)
+    }
   }
 
   return (
@@ -71,21 +91,28 @@ function App() {
           type="text" 
           value={inputName} 
           onChange={(e) => setInputName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAddUser()}
           placeholder="이름을 입력하세요"
+          maxLength={MAX_NAME_LENGTH}
           style={{ padding: '10px', fontSize: '16px', marginRight: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
         />
         <button 
           onClick={handleAddUser} 
+          disabled={isSaving || !inputName.trim() || inputName.trim().length > MAX_NAME_LENGTH}
           style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#646cff', color: 'white', border: 'none', borderRadius: '4px' }}
         >
-          DB에 저장
+          {isSaving ? '저장 중...' : 'DB에 저장'}
         </button>
       </div>
+
+      {errorMessage && <p role="alert" style={{ color: '#f44336', marginBottom: '16px' }}>{errorMessage}</p>}
 
       {/* DB 저장 목록 표시 영역 */}
       <h3>📦 Docker PostgreSQL DB에 저장된 목록:</h3>
       <div style={{ display: 'inline-block', textAlign: 'left', minWidth: '320px' }}>
-        {users.length === 0 ? (
+        {isLoading ? (
+          <p style={{ color: '#888', textAlign: 'center' }}>목록을 불러오는 중입니다.</p>
+        ) : users.length === 0 ? (
           <p style={{ color: '#888', textAlign: 'center' }}>저장된 데이터가 없습니다.</p>
         ) : (
           <ul style={{ listStyle: 'none', padding: 0 }}>
@@ -100,17 +127,24 @@ function App() {
                       type="text"
                       value={editingName}
                       onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleUpdateUser(user.id)}
+                      maxLength={MAX_NAME_LENGTH}
                       style={{ padding: '4px 8px', fontSize: '16px', marginRight: '8px' }}
                     />
                     <div>
                       <button 
                         onClick={() => handleUpdateUser(user.id)}
+                        disabled={busyUserId !== null || !editingName.trim() || editingName.trim().length > MAX_NAME_LENGTH}
                         style={{ padding: '4px 8px', marginRight: '4px', cursor: 'pointer', backgroundColor: '#4caf50', color: 'white', border: 'none', borderRadius: '4px' }}
                       >
-                        저장
+                        {busyUserId === user.id ? '저장 중...' : '저장'}
                       </button>
                       <button 
-                        onClick={() => setEditingId(null)}
+                        onClick={() => {
+                          setEditingId(null)
+                          setEditingName('')
+                        }}
+                        disabled={busyUserId !== null}
                         style={{ padding: '4px 8px', cursor: 'pointer', backgroundColor: '#888', color: 'white', border: 'none', borderRadius: '4px' }}
                       >
                         취소
@@ -124,12 +158,14 @@ function App() {
                     <div style={{ marginLeft: '16px' }}>
                       <button 
                         onClick={() => handleStartEdit(user)}
+                        disabled={busyUserId !== null}
                         style={{ padding: '4px 8px', marginRight: '4px', cursor: 'pointer', backgroundColor: '#ff9800', color: 'white', border: 'none', borderRadius: '4px' }}
                       >
                         수정
                       </button>
                       <button 
                         onClick={() => handleDeleteUser(user.id)}
+                        disabled={busyUserId !== null}
                         style={{ padding: '4px 8px', cursor: 'pointer', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '4px' }}
                       >
                         삭제
