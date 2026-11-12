@@ -1,1 +1,4 @@
 backend/src/main/java/com/example/demo/UserController.java
+.env
+.env.*
+!.env.example

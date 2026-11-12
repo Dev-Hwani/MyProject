@@ -7,7 +7,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 @RestController
-@CrossOrigin(origins = "*") // 프론트엔드(React) CORS 방지
 public class UserController {
 
     private final UserRepository userRepository;

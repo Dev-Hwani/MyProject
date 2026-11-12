@@ -1,64 +1,57 @@
 # Fullstack Integration Test App
 
-Spring Boot, React, Docker 기반의 PostgreSQL을 활용한 Fullstack 연동 테스트 애플리케이션.  
-사용자가 이름을 입력하고 DB에 저장하면, 저장된 데이터를 조회하여 화면에 실시간으로 출력한다.
+Spring Boot, React, and PostgreSQL CRUD application. Docker Compose runs the production-style stack: Caddy terminates HTTP/HTTPS, Nginx serves the built frontend, Spring Boot provides the API, and PostgreSQL is kept on the private Compose network.
 
----
+## Requirements
 
-## 🛠 Tech Stack
+- Ubuntu Server with Docker Engine and the Docker Compose plugin
+- For HTTPS: a domain whose DNS A/AAAA record points to the VM
 
-### Backend
-* **Java 17**
-* **Spring Boot 4.x**
-* **Spring Data JPA**
-* **Gradle**
+## Deploy on an Ubuntu VM
 
-### Frontend
-* **React**
-* **Vite**
+1. Clone the repository and enter its root directory.
+2. Create the private environment file and set a strong database password:
 
-### Database & Infrastructure
-* **PostgreSQL 17** (Docker)
-* **Docker / Docker Compose**
-* **WSL2 (Ubuntu)**
+   ```bash
+   cp .env.example .env
+   nano .env
+   chmod 600 .env
+   ```
 
----
+   Set both `POSTGRES_ADMIN_PASSWORD` and `APP_DB_PASSWORD` to different, unique secrets (for example, generate each with `openssl rand -hex 32`). For HTTPS, set `SITE_ADDRESS` to the domain name (for example, `app.example.com`). Keep `SITE_ADDRESS=:80` only for HTTP testing; do not use plain HTTP for a public production service.
 
-## 📂 Project Structure
+3. Allow inbound TCP ports 80 and 443 in the VM firewall and cloud security group. Caddy obtains and renews TLS certificates automatically when `SITE_ADDRESS` is a valid domain and DNS points to this VM.
+4. Build and start the services:
 
-```text
-MyProject/
-├── backend/                  # Spring Boot 백엔드 프로젝트
-│   ├── src/main/java/com/example/demo/
-│   │   ├── DemoApplication.java
-│   │   ├── HelloController.java
-│   │   ├── User.java         # JPA Entity
-│   │   ├── UserController.java # REST API Controller
-│   │   └── UserRepository.java # Spring Data JPA Repository
-│   ├── Dockerfile
-│   └── build.gradle
-├── frontend/                 # React (Vite) 프론트엔드 프로젝트
-│   ├── src/
-│   └── Dockerfile
-└── docker-compose.yml        # 전체 컨테이너 오케스트레이션
-```
+   ```bash
+   docker compose up -d --build
+   docker compose ps
+   ```
 
-## 🚀 Getting Started
+   Visit `https://<your-domain>` (or `http://<vm-ip>` for HTTP-only testing). Only the Caddy proxy publishes ports; the API and database are not exposed directly to the internet.
 
-### Requirements
-
-* Docker Desktop or Docker Engine with Docker Compose
-
-### Run the application
-
-From the project root, build and start PostgreSQL, the backend, and the frontend:
+## Operations
 
 ```bash
-docker compose up --build
+# Follow service logs
+docker compose logs -f
+
+# Restart after pulling code changes
+git pull
+docker compose up -d --build
+
+# Stop services without deleting database or TLS data
+docker compose down
 ```
 
-Open the frontend at [http://localhost:5173](http://localhost:5173). The backend is available at [http://localhost:8080](http://localhost:8080).
+PostgreSQL and Caddy state use named Docker volumes. The backend runs as a non-root user and connects with a separate database role; the admin credentials are not used by the application. JPA validates the schema at startup instead of changing it automatically. Back up the database regularly before upgrades or maintenance:
 
-To run the services in the background, use `docker compose up -d --build`. Follow logs with `docker compose logs -f` and stop the services with `docker compose down`.
+```bash
+docker compose exec -T postgres_db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup.sql
+```
 
-PostgreSQL data is kept in a Docker volume when the services are stopped. To remove the database data as well, run `docker compose down -v`.
+`docker compose down -v` permanently deletes database and Caddy data; use it only when you intend to reset them. If migrating an existing PostgreSQL volume from the earlier Compose setup, set `POSTGRES_DB`, `POSTGRES_ADMIN_USER`, and `POSTGRES_ADMIN_PASSWORD` in `.env` to the values that initialized that volume before running Compose. The earlier repository defaults were `mydatabase`, `myuser`, and `mypassword`; use these only if they were not changed in your existing deployment. PostgreSQL does not update an existing volume's credentials from changed environment variables. Back up the database before changing deployment settings. Future database schema changes should be applied as reviewed SQL migrations before updating the application.
+
+## Local frontend development
+
+Create `.env` as described above, then start the database and backend with `docker compose up -d postgres_db backend`. From `frontend/`, run `npm ci && npm run dev`. Vite proxies `/api` requests to `http://localhost:8080`; deployed traffic uses the same `/api` path through Caddy.

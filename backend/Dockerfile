@@ -5,6 +5,8 @@ RUN chmod +x gradlew && ./gradlew bootJar --no-daemon
 
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-COPY --from=build /app/build/libs/app.jar app.jar
+RUN apk add --no-cache curl && addgroup -S app && adduser -S -G app app
+COPY --from=build --chown=app:app /app/build/libs/app.jar app.jar
+USER app
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
